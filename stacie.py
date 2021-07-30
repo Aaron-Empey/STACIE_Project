@@ -11,15 +11,22 @@ from matplotlib.widgets import PolygonSelector
 from matplotlib.patches import Polygon
 import json
 import time as t
+import platform
 
 if any('SPYDER' in name for name in environ):
-    matplotlib.use('Qt5Agg')
+    if platform.system() == 'Windows':
+        matplotlib.use('Qt5Agg')
+    elif platform.system() == 'Darwin':
+        matplotlib.use('MacOSX')
+
 else:
     pass
 
 plt.ion()
 
-
+# If running in the terminal setting useblit=True in line 37 will dramatically increase the interactivity speed
+# of STACIE. However, in doing so once a previously drawn polygon's shape is adjusted all subsequent polygons
+# will temporarily disappear until either a new polygon is drawn (hiting "enter") or the figure is closed and reopened
 class Poly:  # class to make each polygon shape
 
     def __init__(self, ax, fig):  # initialising
@@ -185,17 +192,17 @@ def extract_data(file_data, yyyydddb, yyyyddde):
     time_t04 = file[time_index].copy()
     no_digits = len(str(time_t04[1]).split('.')[0])
 
-    if no_digits <= 7:
     # transform the time table (in 'Day since year 2004') into Day of
     # Year and then datetime table
-        if no_digits == 3: #doy format
+    if no_digits <= 7:
+        if no_digits == 3:  # doy format
             time_doy_tmp = doy_to_yyyyddd(time_t04, file_data['origin'])
-        elif no_digits == 7:  #yyyyddd format
+        elif no_digits == 7:  # yyyyddd format
             time_doy_tmp = time_t04
 
         time_doy = time_doy_tmp[(time_doy_tmp >= yyyydddb) & (time_doy_tmp < yyyyddde+1)]
         time = doy_to_datetime(time_doy)
-        
+
     # copy the flux and frequency variable into temporary variable in
     # order to interpolate them in log scale
     s = file[freq_index][:, (time_doy_tmp >= yyyydddb) & (time_doy_tmp < yyyyddde+1)].copy()
@@ -213,16 +220,16 @@ def extract_data(file_data, yyyydddb, yyyyddde):
 
 
 # The setting up and interacting with the plots using polygonSelector
-def plot_and_interact(startDay, endDay, file, colour_in=None, fwd=None):
+def plot_and_interact(start_day, end_day, file, colour_in=None, fwd=None):
 
-    time, time_doy, freq, flux = extract_data(file, yyyydddb=startDay, yyyyddde=endDay)
+    time, time_doy, freq, flux = extract_data(file, yyyydddb=start_day, yyyyddde=end_day)
 
     figsize = (15, 5)
 
     fontsize = 12
 
-    vmin = flux[flux > 0.].min()
-    vmax = flux.max()
+    vmin = np.quantile(flux[flux > 0.], 0.05)
+    vmax = np.quantile(flux[flux > 0.], 0.95)
     scaleZ = colors.LogNorm(vmin=vmin, vmax=vmax)
 
     # First plot the data as pcolormesh object and save it as a .png
@@ -241,13 +248,13 @@ def plot_and_interact(startDay, endDay, file, colour_in=None, fwd=None):
 
     # Formatting Axes
     ax2.set_xlabel('Time', fontsize=fontsize)
-    ax2.set_ylabel('Frequency (kHz)', fontsize=fontsize)
-    ax2.set_title(f'Cassini/RPWS data - DoY {startDay} to {endDay}', fontsize=fontsize+2)
+    ax2.set_ylabel(f'Frequency ({file["units"]})', fontsize=fontsize)
+    ax2.set_title(f' {file["obs"]} Data - DoY {start_day} to {end_day}', fontsize=fontsize+2)
     date_fmt = mdates.DateFormatter('%Y-%j\n%H:%M')
     ax2.xaxis.set_major_formatter(date_fmt)
 
     # Formatting colourbar
-    figure = ax2.figure
+    figure = ax1.figure
     divider = axes_grid1.make_axes_locatable(ax2)
     cax = divider.append_axes("right", size=0.15, pad=0.2)
     cb = figure.colorbar(im1, extend='both', shrink=0.9, cax=cax, ax=ax2)
@@ -258,6 +265,7 @@ def plot_and_interact(startDay, endDay, file, colour_in=None, fwd=None):
             ax2.add_patch(Polygon(shape, color='k', linestyle='--', linewidth=1.5, alpha=0.5, fill=False))
 
     ax2.imshow(image, aspect='auto', extent=[mt[0], mt[1], min(freq), max(freq)])
+    plt.show()
 
     # Plotting and interacting
     # Begins by basic instruction
@@ -286,7 +294,7 @@ if __name__ == '__main__':
     while True:
         try:
             file_name, start_year = input('\n Input RPWS (.sav) data file name and year of origin (e.g. filename.sav, 2006):  ').split(', ')
-    
+
             if path.exists(file_name):
                 if file_name.endswith('.sav'):
                     time_var, freq_var, flux_var = input('Please enter the time, frequency and flux variable names in your file (e.g. t, fq, fx): ').split(', ')
@@ -301,7 +309,7 @@ if __name__ == '__main__':
             print('\n You did not enter the file name and year of origin correctly. Please try again')
 
     observer, units = input('\n Please enter the observer and units of measurement (e.g. Juno, kHz): ').split(', ')
-    file_data = {'name':file_name, 'origin':int(start_year), 'obs':observer, 'units':units, 'time':time_var, 'freq': freq_var, 'flux':flux_var}
+    file_data = {'name': file_name, 'origin': int(start_year), 'obs': observer, 'units': units, 'time': time_var, 'freq': freq_var, 'flux': flux_var}
 start_day = int(input('\n Please enter your start day (yyyydoy): '))
 end_day = int(input('\n Please enter your end day (yyyydoy): '))
 saved_polys = open_and_draw(start_day, end_day)
@@ -312,7 +320,7 @@ direction = None
 # if so then they move to the next time range
 ans = input('\n Do you wish to continue cataloging (y/n)? ')
 while ans == 'y':
-    direction = input('\n Do you wish to scroll to the next or previous time phase (forward/backward)?')
+    direction = input('\n Do you wish to scroll to the next or previous time phase (forward/backward)? ')
     time_diff = int(end_day-start_day)
 
     if direction == 'forward':
